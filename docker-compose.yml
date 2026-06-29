@@ -1,0 +1,87 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: factory-postgres
+    environment:
+      - POSTGRES_USER=factory
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-factory_local_dev_only}
+      - POSTGRES_DB=factory
+    ports:
+      - "5432:5432"
+    volumes:
+      - factory-db-data:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U factory"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  elasticmq:
+    image: softwaremill/elasticmq-native:latest
+    container_name: factory-queue
+    ports:
+      - "9324:9324"   # SQS-compatible API
+      - "9325:9325"   # web UI
+
+  # Build-only service: produces the "pi-sandbox" image the worker launches
+  # via the host docker.sock. This service is never meant to actually RUN --
+  # `docker compose build` (or `up --build`) builds/tags the image, but the
+  # `build-only` profile means a plain `docker compose up` never starts it
+  # as a container. The image tag must match PI_SANDBOX_IMAGE in .env.
+  pi-sandbox:
+    build:
+      context: ./pi-sandbox
+      dockerfile: Dockerfile
+    image: ${PI_SANDBOX_IMAGE:-pi-sandbox}
+    profiles: ["build-only"]
+    command: ["true"]
+
+  orchestrator:
+    build:
+      context: ./orchestrator
+      dockerfile: Dockerfile
+    container_name: factory-orchestrator
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://factory:${POSTGRES_PASSWORD:-factory_local_dev_only}@postgres:5432/factory
+      - SQS_ENDPOINT_URL=http://elasticmq:9324
+      - AWS_ACCESS_KEY_ID=local
+      - AWS_SECRET_ACCESS_KEY=local
+      - AWS_DEFAULT_REGION=us-east-1
+      - TARGET_REPO_PATH=${TARGET_REPO_PATH}
+    volumes:
+      - ${TARGET_REPO_PATH}:/target-repo:ro   # orchestrator only ever reads PBI/spec files
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: ./worker
+      dockerfile: Dockerfile
+    container_name: factory-worker
+    environment:
+      - DATABASE_URL=postgresql://factory:${POSTGRES_PASSWORD:-factory_local_dev_only}@postgres:5432/factory
+      - SQS_ENDPOINT_URL=http://elasticmq:9324
+      - AWS_ACCESS_KEY_ID=local
+      - AWS_SECRET_ACCESS_KEY=local
+      - AWS_DEFAULT_REGION=us-east-1
+      - TARGET_REPO_PATH=${TARGET_REPO_PATH}
+      - HOST_TARGET_REPO_PATH=${HOST_TARGET_REPO_PATH}
+      - PI_SANDBOX_IMAGE=${PI_SANDBOX_IMAGE:-pi-sandbox}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock   # to launch sibling pi-sandbox containers
+      - ${TARGET_REPO_PATH}:/target-repo            # worker mounts this INTO pi-sandbox, read-write
+      - factory-run-logs:/var/factory/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  factory-db-data:
+  factory-run-logs:

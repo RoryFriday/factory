@@ -22,6 +22,9 @@ yarn-error.log*
 logs/
 *.jsonl
 
+# Specs (factory-level, not target-repo specs)
+specs/
+
 # OS cruft
 .DS_Store
 Thumbs.db

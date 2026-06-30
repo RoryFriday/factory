@@ -2,6 +2,9 @@ import express from "express";
 import { pool, PbiRow } from "./db.js";
 import { enqueuePbiJob } from "./queue.js";
 import { scanAndRegisterPbis } from "./scanner.js";
+import { getSourceControlConfig, ensureRepoReady } from "./sourceControl.js";
+
+const scConfig = getSourceControlConfig();
 
 const app = express();
 app.use(express.json());
@@ -58,6 +61,21 @@ app.post("/pbis/:id/enqueue", async (req, res) => {
       res.json({ pbiId: id, pbiNumber: pbi.pbi_number, status: "blocked" });
       return;
     }
+  }
+
+  // When source control is enabled, ensure the target repo is up-to-date
+  // with the remote's default branch before enqueuing.
+  try {
+    await ensureRepoReady(scConfig);
+  } catch (err) {
+    console.error(`Source control sync failed for PBI ${pbi.pbi_number}:`, err);
+    res.status(500).json({
+      pbiId: id,
+      pbiNumber: pbi.pbi_number,
+      status: "error",
+      error: `Source control sync failed: ${(err as Error).message}`,
+    });
+    return;
   }
 
   await enqueuePbiJob(id);

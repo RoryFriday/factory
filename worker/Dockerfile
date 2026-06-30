@@ -8,9 +8,10 @@ RUN npm run build
 
 FROM node:22-slim
 
-# Install Docker CLI only (NOT the daemon) -- the worker talks to the HOST
-# daemon via the mounted /var/run/docker.sock, it never runs its own.
+# Install Docker CLI (NOT the daemon -- talks to HOST via mounted docker.sock)
+# and git (for simple-git push operations when SOURCE_CONTROL_ENABLED=true).
 RUN apt-get update && apt-get install -y \
+    git \
     ca-certificates \
     curl \
     gnupg \

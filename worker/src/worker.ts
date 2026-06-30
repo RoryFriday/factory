@@ -4,6 +4,9 @@ import { pool } from "./db.js";
 import { receiveOneMessage, deleteMessage, getQueueUrl } from "./queue.js";
 import { runPiAgent } from "./agentRunner.js";
 import { runGate } from "./gateRunner.js";
+import { getSourceControlConfig, pushBranch, remoteBranchName } from "./sourceControl.js";
+
+const scConfig = getSourceControlConfig();
 
 async function processJob(pbiId: number): Promise<void> {
   const { rows } = await pool.query<PbiRow>("SELECT * FROM pbi WHERE id = $1", [pbiId]);
@@ -51,6 +54,30 @@ async function processJob(pbiId: number): Promise<void> {
     if (result.status !== "passed") {
       allPassed = false;
       console.warn(`Gate ${gate.type} failed for PBI ${pbi.pbi_number}`);
+    }
+  }
+
+  // If all gates passed and source control is enabled, push the agent's
+  // commits to a remote branch.
+  let pushStatus = "none";
+  let remoteBranch: string | null = null;
+
+  if (allPassed && scConfig.enabled) {
+    remoteBranch = remoteBranchName(pbi.feature, pbi.pbi_number);
+    const pushResult = await pushBranch(scConfig, pbi.feature, pbi.pbi_number);
+    pushStatus = pushResult.pushStatus;
+    remoteBranch = pushResult.remoteBranch;
+
+    await pool.query(
+      "UPDATE run SET push_status = $1, remote_branch = $2 WHERE id = $3",
+      [pushStatus, remoteBranch, runId]
+    );
+
+    if (pushStatus === "failed") {
+      console.warn(`Push failed for PBI ${pbi.pbi_number}: ${pushResult.detail}`);
+      // Gates passed but push failed -- mark the PBI as failed so the
+      // operator knows there's a problem, even though the code itself is fine.
+      allPassed = false;
     }
   }
 

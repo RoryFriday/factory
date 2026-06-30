@@ -53,8 +53,13 @@ services:
       - AWS_SECRET_ACCESS_KEY=local
       - AWS_DEFAULT_REGION=us-east-1
       - TARGET_REPO_PATH=${TARGET_REPO_PATH}
+      - SOURCE_CONTROL_ENABLED=${SOURCE_CONTROL_ENABLED:-false}
+      - GIT_REPO_URL=${GIT_REPO_URL:-}
+      - GIT_DEFAULT_BRANCH=${GIT_DEFAULT_BRANCH:-main}
+      - GIT_TOKEN=${GIT_TOKEN:-}
     volumes:
-      - ${TARGET_REPO_PATH}:/target-repo:ro   # orchestrator only ever reads PBI/spec files
+      # read-write when SOURCE_CONTROL_ENABLED — orchestrator clone/pulls before enqueue
+      - ${TARGET_REPO_PATH}:/target-repo
     depends_on:
       postgres:
         condition: service_healthy
@@ -74,6 +79,10 @@ services:
       - HOST_TARGET_REPO_PATH=${HOST_TARGET_REPO_PATH}
       - PI_SANDBOX_IMAGE=${PI_SANDBOX_IMAGE:-pi-sandbox}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - SOURCE_CONTROL_ENABLED=${SOURCE_CONTROL_ENABLED:-false}
+      - GIT_REPO_URL=${GIT_REPO_URL:-}
+      - GIT_DEFAULT_BRANCH=${GIT_DEFAULT_BRANCH:-main}
+      - GIT_TOKEN=${GIT_TOKEN:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock   # to launch sibling pi-sandbox containers
       - ${TARGET_REPO_PATH}:/target-repo            # worker mounts this INTO pi-sandbox, read-write

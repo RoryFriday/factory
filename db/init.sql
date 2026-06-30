@@ -22,7 +22,9 @@ CREATE TABLE IF NOT EXISTS run (
     finished_at TIMESTAMPTZ,
     status TEXT NOT NULL DEFAULT 'running',  -- running | completed | failed | timed_out
     agent_summary TEXT,                       -- the agent's own final text summary
-    raw_log_path TEXT                         -- path to the full rpc event log, on disk
+    raw_log_path TEXT,                        -- path to the full rpc event log, on disk
+    remote_branch TEXT,                       -- e.g. 'pbi/rate-limiting/PBI-001', set when source control enabled
+    push_status TEXT DEFAULT 'none'           -- none | pushed | failed
 );
 
 CREATE TABLE IF NOT EXISTS gate_result (
